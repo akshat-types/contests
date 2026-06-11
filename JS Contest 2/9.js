@@ -1,0 +1,5 @@
+const fs = require('fs')
+data1=fs.readFileSync('users1.json','utf-8')
+data2=fs.readFileSync('users2.json','utf-8')
+data1.push(...data2)
+console.log(data1)
