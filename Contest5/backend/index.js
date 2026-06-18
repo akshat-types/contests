@@ -1,5 +1,5 @@
 const express = require('express');
-const {z} = require('zod')
+const {z, safeParse} = require('zod')
 const app = express();
 const port = 3000;
 app.use(express.json());
@@ -101,6 +101,8 @@ bookings: [
   ]
 }]
 
+let bookingId = 1001
+
 const SignUpSchema = z.object({
     username : z.string(),
     password : z.string().min(4).max(20),
@@ -110,6 +112,16 @@ const SignUpSchema = z.object({
 const SignInSchema = z.object({
     username : z.string(),
     password : z.string().min(4).max(20)
+})
+
+const bookingSchema = z.object({
+    movieId : z.number(),
+    showId : z.number(),
+    seats : z.number()
+})
+
+const updateBookingSchema = z.object({
+    seats : z.number()
 })
 
 app.post('/signup',(req,res) => {
@@ -180,6 +192,294 @@ app.post('/signin',(req,res) => {
         token: token
     })
     
+})
+
+app.get('/movies',(req,res) => {
+    res.json({
+      success:true,
+      data: constdb.movies.map(n => n.title)
+    })
+})
+
+app.get('/movies/:movieid',(req,res) => {
+    const movieid = parseInt(req.params.movieid)
+    const valid = constdb.movies.find(n => n.id === movieid)
+    if(!valid){
+        res.status(404).json({
+            success:false,
+            message: "Movie not found"
+        })
+        return
+    }
+    res.json({
+        success:true,
+        data: valid.title
+    })
+})
+
+app.post('/bookings/:userid',(req,res) => {
+    const valid = bookingSchema.safeParse(req.body)
+    if(!valid.success){
+        res.status(401).json({
+            success : false,
+            message : "Invalid Input"
+        })
+        return
+    }
+
+    const {movieId,showId,seats} = req.body
+    const userId = parseInt(req.params.userid)
+    
+    const validUser = users.find(n => n.id === userId)
+    if(!validUser){
+        res.status(404).json({
+            success: false,
+            message: "User Not Found"
+        })
+        return
+    }
+
+    const validMovie = constdb.movies.find(n => n.id === parseInt(movieId))
+    if(!validMovie){
+        res.status(404).json({
+            success: false,
+            message : "Movie Not Found"
+        })
+        return
+    }
+
+    const validShow = validMovie.shows.find(n => n.showId === parseInt(showId))
+    if(!validShow){
+        res.status(404).json({
+            success: false,
+            message: "Show Not Found"
+        })
+        return
+    }
+
+    const validSeats = validShow.availableSeats >= parseInt(seats)
+    if(!validSeats){
+        res.status(404).json({
+            success : false,
+            message: "Lesser seats available than requested"
+        })
+        return
+    }
+
+    validShow.availableSeats -= seats
+    const totalamount = seats * validShow.pricePerSeat
+    let date = new Date()
+    date = date.toLocaleDateString()
+
+    validUser.bookings.push(
+        {
+            bookingId:bookingId++,
+            movieId:movieId,
+            showId:showId,
+            seats:seats,
+            totalAmount:totalamount,
+            status:"confirmed",
+            bookingDate:date
+        }
+    )
+    res.status(201).json({
+        success : true,
+        message : "Booking Successful",
+        bookingId : bookingId,
+        movieTitle : validMovie.title,
+        showTime : validShow.time,
+        seats : seats,
+        totalAmount : totalamount
+    })
+
+})
+
+app.get('/bookings/:userid',(req,res) => {
+    const userId = parseInt(req.params.userid)
+    const valid = users.find(n => n.id === userId)
+    if(!valid){
+        res.status(404).json({
+            success: false,
+            message : "User Not Found"
+        })
+        return
+    }
+
+    res.json({
+        success: true,
+        data: valid.bookings
+    })
+})
+
+app.get('/bookings/:userId/:bookingId',(req,res) => {
+    const userId = parseInt(req.params.userId)
+    const bookingId = parseInt(req.params.bookingId)
+
+    const validUser = users.find(n => n.id === userId)
+    if(!validUser){
+        res.status(404).json({
+            success: false,
+            message : "User Not Found"
+        })
+        return
+    }
+
+    const validBooking = validUser.bookings.find(n => n.bookingId === bookingId)
+    if(!validBooking){
+        res.status(404).json({
+            success: false,
+            message : "Booking Not Found"
+        })
+        return
+    }
+
+    res.json({
+        success: true,
+        data: validBooking
+    })
+
+})
+
+app.put('/bookings/:userId/:bookingId',(req,res) => {
+
+    const valid = updateBookingSchema.safeParse(req.body)
+    if(!valid.success){
+        res.status(401).json({
+            success : false,
+            message : "Invalid Input"
+        })
+        return
+    }
+
+    const userId = parseInt(req.params.userId)
+    const bookingId = parseInt(req.params.bookingId)
+
+    const validUser = users.find(n => n.id === userId)
+    if(!validUser){
+        res.status(404).json({
+            success: false,
+            message : "User Not Found"
+        })
+        return
+    }
+
+    const validBooking = validUser.bookings.find(n => n.bookingId === bookingId)
+    if(!validBooking){
+        res.status(404).json({
+            success: false,
+            message : "Booking Not Found"
+        })
+        return
+    }
+
+    if(!(validBooking.status === "confirmed")){
+        res.json({
+            success: false,
+            message: "Cancelled Booking Update Not Possible"
+        })
+        return
+    }
+
+    const seats = parseInt(req.body.seats)
+    const addSeats = seats - validBooking.seats
+    const movieId = validBooking.movieId
+    const showId = validBooking.showId
+    const validMovie = constdb.movies.find(n => n.id === movieId)
+    const validShow = validMovie.shows.find(n => n.showId === showId)
+    const availableSeats = validShow.availableSeats
+    if(addSeats > availableSeats){
+      res.json({
+          success : false,
+          message : "Requested Additional Seats Unavailable"
+      })
+      return
+    }
+    validShow.availableSeats -= addSeats
+    const totalAmount = seats * validShow.pricePerSeat
+    validBooking.seats = seats
+    validBooking.totalAmount = totalAmount
+
+    res.json({
+    success : true,
+    message : "Booking Updated Successfully",
+    bookingId : bookingId,
+    seats : seats,
+    totalAmount: totalAmount
+    })
+
+})
+
+app.delete('/bookings/:userId/:bookingId',(req,res) => {
+    const userId = parseInt(req.params.userId)
+    const bookingId = parseInt(req.params.bookingId)
+
+    const validUser = users.find(n => n.id === userId)
+    if(!validUser){
+        res.status(404).json({
+            success: false,
+            message : "User Not Found"
+        })
+        return
+    }
+
+    const validBooking = validUser.bookings.find(n => n.bookingId === bookingId)
+    if(!validBooking){
+        res.status(404).json({
+            success: false,
+            message : "Booking Not Found"
+        })
+        return
+    }
+
+    if(!(validBooking.status === "confirmed")){
+        res.json({
+            success: false,
+            message: "Cannot Cancel Booking thats not confirmed"
+        })
+        return
+    }
+
+    validBooking.status = "cancelled"
+    const movieId = validBooking.movieId
+    const showId = validBooking.showId
+    const update = constdb.movies.find(n => n.id === movieId).shows.find(n => n.showId === showId)
+    update.availableSeats += validBooking.seats
+    res.json({
+        success : true,
+        message : "Booking Cancelled Successfully"
+    })
+    
+})
+
+app.get('/summary/:userId',(req,res) => {
+    const userId = parseInt(req.params.userId)
+    const validUser = users.find(n => n.id === userId)
+    if(!validUser){
+        res.json({
+            success: false,
+            message: "User Not Found"
+        })
+        return
+    }
+
+    const confirmedBookings = validUser.bookings.filter(n => n.status === "confirmed")
+    let totalAmountSpent = 0
+    let totalSeatsBooked = 0
+
+    for( x of confirmedBookings){
+        totalAmountSpent += x.totalAmount
+        totalSeatsBooked += x.seats
+    }
+
+    res.json({
+        userId: userId,
+        username: validUser.username,
+        totalBookings: validUser.bookings.length,
+        totalAmountSpent: totalAmountSpent,
+        confirmedBookings: confirmedBookings.length,
+        cancelledBookings: validUser.bookings.length - confirmedBookings.length,
+        totalSeatsBooked: totalSeatsBooked
+    })
 })
 
 app.listen(port, () => {
