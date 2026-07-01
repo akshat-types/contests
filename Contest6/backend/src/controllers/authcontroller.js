@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt')
 const pool = require('../db')
+const jwt = require('jsonwebtoken')
 const {SignUpSchema,SignInSchema} = require('../types/types')
 
 async function SignUpController(req,res){
@@ -41,8 +42,27 @@ async function SignUpController(req,res){
     }
 }
 
-function SignInController(req,res){
+async function SignInController(req,res){
+    try{
+        const valid = SignInSchema.safeParse(req.body)
+        if(!valid.success){
+            res.status(400).json({
+                success : false,
+                message : "Invalid Input"
+            })
+        }
 
+        const {username,password} = valid.data
+        
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        })
+        return;
+    }
 }
 
 module.exports = {

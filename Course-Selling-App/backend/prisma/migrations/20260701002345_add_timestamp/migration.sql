@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Content" ALTER COLUMN "createdAt" SET DEFAULT CURRENT_TIMESTAMP;
